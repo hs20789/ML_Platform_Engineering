@@ -1,5 +1,6 @@
 FROM python:3.11-slim
-WORKDIR /app 
+WORKDIR /app
+COPY --from=ghcr.io/astral-sh/uv:0.12.5 /uv /bin/  
 RUN apt-get update && \
     apt-get install --no-install-recommends -y \
     build-essential \
