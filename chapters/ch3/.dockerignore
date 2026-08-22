@@ -25,6 +25,8 @@ dist/
 # Local configuration and secrets
 .env
 .env.*
+.venv
+.venv/
 !.env.example
 
 # IDE and OS files
