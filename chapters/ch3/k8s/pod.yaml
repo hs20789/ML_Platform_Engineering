@@ -5,6 +5,6 @@ metadata:
 spec:
   containers:
     - name: hello-joker
-      image: heons:hello-joker:v1
+      image: heons/hello-joker:v1
       ports:
         - containerPort: 8083 #애플리케이션이 노출할 포트
