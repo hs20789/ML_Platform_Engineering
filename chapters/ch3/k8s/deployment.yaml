@@ -1,22 +1,32 @@
 apiVersion: apps/v1
-kind: ReplicaSet
+
+kind: Deployment
+
 metadata:
-  name: joker-replicaset
+  name: joker-deployment
   labels:
     app: fast-api
+
 spec:
-  # 복제할 파드 템플릿
+  replicas: 3
+
+  selector:
+    matchLabels:
+      app: fast-api
+
   template:
     metadata:
       name: joker
       labels:
         app: fast-api
+
     spec:
       containers:
         - name: hello-joker
           image: heons/hello-joker:v1
           ports:
             - containerPort: 8083
+
           resources:
             requests:
               cpu: "100m"
@@ -24,9 +34,3 @@ spec:
             limits:
               cpu: "1000m"
               memory: "512Mi"
-  # 원하는 파드 복제본 수
-  replicas: 3
-  # 레플리카셋에 복제, 감시할 파드를 알려주기
-  selector:
-    matchLabels:
-      app: fast-api
