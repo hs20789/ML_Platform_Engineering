@@ -3,7 +3,7 @@ apiVersion: v1
 kind: Service
 
 metadata:
-  name: joker-nodepart-service
+  name: joker-clusterip-service
 
 spec:
   type: ClusterIP

@@ -11,9 +11,9 @@ spec:
       ports:
         - containerPort: 8083 #애플리케이션이 노출할 포트
       resources:
-            requests:
-              cpu: "100m"
-              memory: "128Mi"
-            limits:
-              cpu: "1000m"
-              memory: "512Mi"
+        requests:
+          cpu: "100m"
+          memory: "128Mi"
+        limits:
+          cpu: "1000m"
+          memory: "512Mi"
