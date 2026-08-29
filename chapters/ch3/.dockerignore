@@ -40,3 +40,7 @@ Thumbs.db
 *.tmp
 *.swp
 *~
+
+
+k8s/
+docs/
