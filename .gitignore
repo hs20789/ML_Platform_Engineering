@@ -221,3 +221,6 @@ __marimo__/
 
 # Data File
 data/
+
+# Generated plots
+categorical_variable_plots/
