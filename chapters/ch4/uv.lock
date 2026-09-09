@@ -453,6 +453,7 @@ dependencies = [
     { name = "plotnine" },
     { name = "redis" },
     { name = "s3fs" },
+    { name = "scikit-learn" },
     { name = "seaborn" },
     { name = "xgboost" },
 ]
@@ -475,6 +476,7 @@ requires-dist = [
     { name = "plotnine", specifier = "==0.14.3" },
     { name = "redis", specifier = "==4.6.0" },
     { name = "s3fs", specifier = "==2024.10.0" },
+    { name = "scikit-learn", specifier = ">=1.5.2" },
     { name = "seaborn", specifier = "==0.13.2" },
     { name = "xgboost", specifier = "==1.7.6" },
 ]

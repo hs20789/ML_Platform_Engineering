@@ -70,3 +70,22 @@ with mlflow.start_run(run_name=f"eda-{uuid.uuid4()}"):
         plt.close(fig)
 
     mlflow.log_artifacts(CURRENT_DIR / "categorical_variable_plots")
+    
+    
+# %%
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.model_selection import train_test_split
+import numpy as np
+import pickle
+
+target = df.Target
+feature_df = df.drop('Target', axis=1)
+
+encoder = OneHotEncoder(sparse_output=False, drop='if_binary')
+target = encoder.fit_transform(np.array(target).reshape(-1, 1))
+dummyfied_df = pd.get_dummies(feature_df, drop_first=True, sparse=False, dtype=float)
+coll_list = dummyfied_df.columns.to_list()
+with open('column_list.pkl', 'wb') as f:
+    pickle.dump(coll_list, f)
+X_train, X_test, y_train, y_test = train_test_split(dummyfied_df.reindex(columns=coll_list, fill_value=0), target, test_size=0.2, shuffle=True, random_state=42)
+
