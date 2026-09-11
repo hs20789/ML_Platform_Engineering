@@ -13,26 +13,16 @@ except NameError:
     CURRENT_DIR = Path.cwd()
 
 DATA_DIR = CURRENT_DIR.parent / "data"
+PLOT_DIR = CURRENT_DIR / "categorical_variable_plots"
+os.makedirs(PLOT_DIR, exist_ok=True)
 
 df = pd.read_csv(DATA_DIR / "income_data.csv", skipinitialspace=True)
 print(df.head(), '\n')
 print(df.info(), '\n')
 
-os.makedirs(CURRENT_DIR / "categorical_variable_plots", exist_ok=True)
-for i in df.drop(columns=["Target"]).select_dtypes(include='object').columns:
-    print(f"Variable {i} \n")
-    print(df[i].value_counts(), '\n')
-    fig, ax = plt.subplots(figsize=(10, 6))
-    sns.histplot(data=df, y=i, hue="Target", multiple="fill", ax=ax)
-    ax.set_title(f"Distribution of {i} by Target Variable")
-    ax.set_xlabel("Proportion")
-    fig.savefig(CURRENT_DIR / "categorical_variable_plots" / f"{i}_distribution.png")
-    plt.close(fig)
-
 
 # MLflow 추적
 # %%
-import mlflow
 import uuid
 
 # %%
@@ -62,14 +52,12 @@ with mlflow.start_run(run_name=f"eda-{uuid.uuid4()}"):
 
         fig.tight_layout()
 
-        fig.savefig(
-            CURRENT_DIR / "categorical_variable_plots" / f"Variable {column}.png"
-        )
+        fig.savefig(PLOT_DIR / f"Variable {column}.png")
 
         plt.show()
         plt.close(fig)
 
-    mlflow.log_artifacts(CURRENT_DIR / "categorical_variable_plots")
+    mlflow.log_artifacts(PLOT_DIR)
     
     
 # %%
