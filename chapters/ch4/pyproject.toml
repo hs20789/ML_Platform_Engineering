@@ -13,16 +13,16 @@ dependencies = [
     "xgboost==1.7.6",
     "feast==0.40.1",
     "redis==4.6.0",
-    "s3fs==2024.10.0",
-    "boto3==1.35.36",
-    "fsspec==2024.10.0",
-    "aiobotocore==2.15.2",
+    "s3fs==2026.7.0",
+    "boto3==1.43.75",
+    "fsspec==2026.7.0",
+    "aiobotocore==3.9.1",
     "seaborn==0.13.2",
     "scikit-learn>=1.5.2",
 ]
 
 [tool.uv]
-# feast 0.40.1 / s3fs 2024.10 시점에 맞춰 전이 의존성 상한을 고정한다.
+# feast 0.40.1 시점에 맞춰 전이 의존성 상한을 고정한다.
 # 상한이 없으면 dask 2026.x, pyarrow 20.x가 잡혀 feast 런타임에서 깨질 수 있다.
 constraint-dependencies = [
     "dask<2025.0.0",
