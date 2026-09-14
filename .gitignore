@@ -224,3 +224,7 @@ data/
 
 # Generated plots
 categorical_variable_plots/
+
+# MLflow local tracking store and artifacts
+mlruns/
+mlartifacts/
