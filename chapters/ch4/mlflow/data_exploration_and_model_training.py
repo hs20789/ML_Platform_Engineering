@@ -37,17 +37,16 @@ print(df.info(), "\n")  # 결측치·dtype 확인
 # 이 파일은 "Income Prediction Experiment" 실험 하나 안에 EDA 1개 + 모델 학습 3개,
 # 총 4개의 run을 기록한다. (run = 실험을 한 번 시도한 기록 단위, 서로 지표로 비교 가능)
 # %%
-import uuid
-
-# %%
 mlflow.set_tracking_uri("http://localhost:5000")  # MLflow 서버 URI 설정 (로컬에 mlflow server가 떠 있어야 함)
 mlflow.set_experiment("Income Prediction Experiment")  # 실험 이름 설정. 파일 끝 MlflowClient 조회부와 이름이 반드시 같아야 함
+training_run_ids = []  # 이번 실행에서 학습한 모델만 마지막 등록 단계의 후보로 사용
+model_artifact_path = "income-classifier"  # 세 모델의 저장 이름과 등록 시 조회 경로를 통일
 
 # %%
 # --- Run 1/4: EDA ---
 # 범주형 변수별로 Target 비율이 어떻게 갈리는지 그림으로 남겨서,
 # 어떤 변수가 예측에 쓸모 있어 보이는지 MLflow UI에서 사람이 확인할 수 있게 한다.
-with mlflow.start_run(run_name=f"eda-{uuid.uuid4()}"):
+with mlflow.start_run(run_name="eda-income-distribution"):
     for column in df.drop(columns=["Target"]).select_dtypes(include="object").columns:
         print(f"Variable {column}\n")
         print(df[column].value_counts())
@@ -165,17 +164,19 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import roc_auc_score
 
 BUCKET_NAME = bucket_name  # 위에서 존재를 확인한 버킷을 그대로 재사용
-with mlflow.start_run() as run:
+with mlflow.start_run(run_name="decision-tree") as run:
     tree = DecisionTreeClassifier()
     run_id = run.info.run_id  # NCP 업로드 파일명에 넣어서 run끼리 겹치지 않게 함
+    training_run_ids.append(run_id)
 
     # 1) 이번 run이 사용하는 원본/학습/평가 데이터를 NCP Object Storage에 CSV로 업로드
     feature_df_path = f"income-classifier-datasets/feature_df-{run_id}.csv"
     save_df_to_ncp(feature_df, BUCKET_NAME, feature_df_path)
-    train_df = pd.concat([X_train, pd.Series(y_train.ravel())], axis=1)
+    # ndarray를 대입하면 인덱스가 아닌 현재 행 순서대로 정답이 붙는다.
+    train_df = X_train.assign(Target=y_train.ravel())
     train_df_path = f"income-classifier-datasets/train-{run_id}.csv"
     save_df_to_ncp(train_df, BUCKET_NAME, train_df_path)  # A
-    test_df = pd.concat([X_test, pd.Series(y_test.ravel())], axis=1)
+    test_df = X_test.assign(Target=y_test.ravel())
     test_df_path = f"income-classifier-datasets/test-{run_id}.csv"
     save_df_to_ncp(test_df, BUCKET_NAME, test_df_path)
 
@@ -220,8 +221,8 @@ with mlflow.start_run() as run:
     print(f"Accuracy test : {test_accuracy}")
 
     # 7) 학습된 모델과 하이퍼파라미터 저장.
-    #    artifact_path="income-classifier" → 파일 끝 model_artifact_path와 이름이 같아야 register_model이 찾을 수 있음
-    mlflow.sklearn.log_model(tree, "income-classifier")  # G
+    #    세 모델 모두 같은 이름으로 저장해서 마지막 등록 단계에서 찾을 수 있게 한다.
+    mlflow.sklearn.log_model(tree, name=model_artifact_path)  # G
     mlflow.log_params(tree.get_params())  # H
 
 
@@ -231,13 +232,15 @@ with mlflow.start_run() as run:
 # 차이점: 트리를 여러 개 앙상블하는 만큼 학습 시간이 궁금해질 수 있어 fit 소요 시간도 같이 기록한다.
 from sklearn.ensemble import RandomForestClassifier
 
-with mlflow.start_run() as run:
+with mlflow.start_run(run_name="random-forest") as run:
     forest = RandomForestClassifier()
 
     start = time.time()
     run_id = run.info.run_id
-    train_df = pd.concat([X_train, pd.Series(y_train.ravel())], axis=1)
-    test_df = pd.concat([X_test, pd.Series(y_test.ravel())], axis=1)
+    training_run_ids.append(run_id)
+    # 원본 인덱스가 섞여 있어도 특성과 정답의 행 순서를 유지한다.
+    train_df = X_train.assign(Target=y_train.ravel())
+    test_df = X_test.assign(Target=y_test.ravel())
     feature_df_path = f"income-classifier-datasets/feature_df-{run_id}.csv"
     train_df_path = f"income-classifier-datasets/train-{run_id}.csv"
     save_df_to_ncp(train_df, BUCKET_NAME, train_df_path)
@@ -276,28 +279,29 @@ with mlflow.start_run() as run:
     print(f"Accuracy train : {training_accuracy}")
     mlflow.log_metric("test_accuracy", test_accuracy)
     print(f"Accuracy test : {test_accuracy}")
-    # artifact_path="income-classifier" → Decision Tree와 동일한 이름으로 저장 (파일 끝 등록 단계와 연결됨)
-    mlflow.sklearn.log_model(forest, "income-classifier")
+    # Decision Tree와 동일한 이름으로 저장 (파일 끝 등록 단계와 연결됨)
+    mlflow.sklearn.log_model(forest, name=model_artifact_path)
 
     mlflow.log_params(forest.get_params())
 
 
 # %%
 # --- Run 4/4: XGBoost (autolog 사용) ---
-# 앞의 두 모델은 log_input/log_model/log_params를 전부 손으로 호출했지만,
-# 여기서는 mlflow.xgboost.autolog() 한 줄로 파라미터·모델 등을 자동 기록되게 한다.
-# 다만 ROC-AUC처럼 우리가 직접 정의한 지표는 autolog가 알 수 없어서 여전히 수동으로 log_metric 해야 한다.
+# 파라미터·학습 데이터·변수 중요도는 autolog로 기록한다.
+# 모델은 다른 두 모델과 저장 이름을 맞추기 위해 직접 log_model을 호출한다.
+# ROC-AUC와 정확도도 직접 계산해서 같은 지표 이름으로 기록한다.
 import xgboost as xgb
 from sklearn.metrics import accuracy_score
 
-with mlflow.start_run() as run:
-    mlflow.xgboost.autolog()  # A  # DMatrix 생성보다 먼저 호출해야 자동 기록이 제대로 걸림
+with mlflow.start_run(run_name="xgboost") as run:
+    mlflow.xgboost.autolog(log_models=False)  # A  # 모델 중복 저장을 막고 아래에서 명시적으로 저장
     n_round = 30
     run_id = run.info.run_id
+    training_run_ids.append(run_id)
     dtrain = xgb.DMatrix(data=X_train, label=y_train.ravel())
     dtest = xgb.DMatrix(data=X_test, label=y_test.ravel())
 
-    # 1차 학습: binary:logistic → 확률값(0~1)을 출력해서 ROC-AUC 계산에 적합
+    # 한 번만 학습: binary:logistic으로 확률을 출력하고, 정확도 계산 때만 0/1로 변환한다.
     params = {
         "objective": "binary:logistic",
         "colsample_bytree": 1,
@@ -312,26 +316,13 @@ with mlflow.start_run() as run:
     pred_train = model.predict(dtrain)
     pred_test = model.predict(dtest)
 
-    # 2차 학습: binary:hinge로 다시 학습해서 위 model/pred_train/pred_test를 덮어쓴다.
-    # 주의: hinge는 0/1 하드 라벨을 출력하므로, 아래 roc_auc_score는 방금 위에서 구한
-    #       1차(logistic, 확률 기반) 예측이 아니라 이 2차 결과로 계산된다.
-    #       (1차 학습·예측은 위 feature importance 플롯에만 쓰이고 최종 지표엔 반영되지 않음 — 원본 코드의 특징)
-    model = xgb.train(
-        params={
-            "objective": "binary:hinge",
-            "colsample_bytree": 1,
-            "learning_rate": 1,
-            "max_depth": 10,
-            "subsample": 1,
-        },
-        dtrain=dtrain,
-    )
-    pred_train = model.predict(dtrain)
-    pred_test = model.predict(dtest)
+    # AUC에는 확률을, 정확도에는 임계값 0.5로 나눈 예측 라벨을 사용한다.
     roc_auc_score_train = roc_auc_score(y_train == 1, pred_train)
     roc_auc_score_test = roc_auc_score(y_test == 1, pred_test)
-    training_accuracy = accuracy_score(y_train, pred_train)
-    test_accuracy = accuracy_score(y_test, pred_test)
+    training_accuracy = accuracy_score(y_train, pred_train >= 0.5)
+    test_accuracy = accuracy_score(y_test, pred_test >= 0.5)
+    # 평가한 바로 그 모델을 저장한다. XGBoost가 선택돼도 공통 경로로 등록할 수 있다.
+    mlflow.xgboost.log_model(model, name=model_artifact_path)
     mlflow.log_metric("roc_auc_score_train", roc_auc_score_train)  # B
     mlflow.log_artifact(COLUMN_LIST_PATH)
     print(f"Roc Auc Score train: {roc_auc_score_train}  \n")
@@ -343,23 +334,29 @@ with mlflow.start_run() as run:
     print(f"Accuracy test : {test_accuracy}")
 
 # %%
-# --- 마무리: 4개 run 중 가장 성능 좋은 모델을 Model Registry에 등록 ---
+# --- 마무리: 이번 실행에서 학습한 3개 모델 중 가장 성능 좋은 모델을 Model Registry에 등록 ---
 # 지금까지는 "학습하고 기록"만 했지, 실제로 서빙에 쓸 모델을 고르진 않았다.
-# 여기서 실험 안의 모든 run을 검색해 test ROC-AUC가 0.8을 넘는 것 중 1등을 찾고,
+# 이번 실행의 완료된 학습 run에서 test ROC-AUC가 0.8을 넘는 것 중 1등을 찾고,
 # 그 run이 저장한 모델을 "random-forest-classifier"라는 이름으로 정식 등록(버전 1, 2, ... 부여)한다.
+# 등록 이름은 기존 이름을 유지하지만, 실제로 선택되는 알고리즘은 세 모델 중 하나다.
 from mlflow import MlflowClient
 
 mlflow_client = MlflowClient()
-experiment_name = "Income Prediction Experiment"  # 38번 줄 set_experiment와 동일해야 조회됨
-model_artifact_path = "income-classifier"  # mlflow.sklearn.log_model(..., "income-classifier")에서 쓴 이름
+experiment_name = "Income Prediction Experiment"  # 위 set_experiment와 동일해야 조회됨
 experiment = mlflow_client.get_experiment_by_name(experiment_name)
-run_object = mlflow_client.search_runs(
+run_ids_filter = ", ".join(f"'{run_id}'" for run_id in training_run_ids)
+candidate_runs = mlflow_client.search_runs(
     experiment_ids=experiment.experiment_id,
-    filter_string="metrics.roc_auc_score_test > 0.8",  # 조건을 만족하는 run이 하나도 없으면 아래 [0]에서 IndexError
+    filter_string=(
+        "metrics.roc_auc_score_test > 0.8 AND attributes.status = 'FINISHED' "
+        f"AND attributes.run_id IN ({run_ids_filter})"
+    ),
     max_results=1,
     order_by=["metrics.roc_auc_score_test DESC"],  # 내림차순 정렬해서 1등만 가져옴
-)[0]
-# 주의: XGBoost run이 1등이 되면 이 경로에 모델이 없어 register_model이 실패할 수 있다
-# (XGBoost 블록은 autolog에만 의존하고 "income-classifier"라는 이름으로 명시적으로 log_model하지 않기 때문)
-model_uri = f"runs:/{run_object.info.run_id}/{model_artifact_path}"
-mlflow.register_model(model_uri, "random-forest-classifier")
+)
+if candidate_runs:
+    run_object = candidate_runs[0]
+    model_uri = f"runs:/{run_object.info.run_id}/{model_artifact_path}"
+    mlflow.register_model(model_uri, "random-forest-classifier")
+else:
+    print("이번 실행에는 test ROC-AUC가 0.8을 넘는 모델이 없어 등록을 건너뜁니다.")
